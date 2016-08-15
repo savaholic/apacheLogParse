@@ -1,0 +1,130 @@
+#!/usr/bin/python
+import sys
+import json
+import pprint
+import math
+from ua_parser import user_agent_parser
+
+#### Global Variable/Configs
+IPFilter= set(["10.250.50.144"]) #List of IPs to filter from stat collection
+
+#### Function Declarations Here #####
+def loadLog(logFile):
+	"""Converts JSON formatted log file to a list of dictionaries.
+	Input: JSON lines formatted log file
+	Output: list object with each item in the list being a dictionary of the request
+	"""
+	with open(logFile, 'r') as accessLog:
+		requests = [json.loads(line) for line in accessLog]
+	return requests
+
+def processRequests(requests,filter=set()):
+	"""Analyzes a list object of requests
+	Input: list object with each item being a dictionary representing the request
+		set object with IPs to filter out
+	Output: A dictionary structured as below
+	Field Name:
+		Unique Field Value:
+			[List of requests with the unique value]
+	"""
+	analysis={}
+	for field in requests[0]:
+		analysis[field]={}
+	for request in requests:
+		if len(set(request["IP"].split(", ")).intersection(filter)): continue
+		### The below request formating should probably be changed into regex ###
+		request["request"]=request["request"].split()[0:2]
+		request["request"][1]="".join([ x for x in request["request"][1].split("?",1)[0] if not x.isdigit()])
+		request["request"] = " ".join(request["request"])
+		for field in request:
+			fieldValue=request[field]
+			if field=="UAgent":
+				fieldValue=user_agent_parser.Parse(request["UAgent"])["user_agent"]["family"]
+			if fieldValue in analysis[field]:
+				analysis[field][fieldValue].append(request)
+			else:
+				analysis[field][fieldValue]=[request]
+	
+	return analysis
+def calculateStats(key,list):
+	n=0
+	mean=0.0
+	variance=0.0
+	max=0.0
+	min=0.0
+	uniqueUsers=set()
+
+	for item in list:
+		rtime=float(item["rtime"])
+		if rtime > max: max=rtime
+		if min==0 or rtime < min: min=rtime
+		n += 1
+		delta = rtime - mean
+		mean += delta/n
+		variance += delta*(rtime - mean)
+		uniqueUsers.add(item["acctNum"])
+	mean/=1000000
+	max/=1000000
+	min/=1000000
+	if n < 2:
+		return (key,n,max,min,mean,0,len(uniqueUsers))
+	else:
+		variance/=n-1
+		return (key,n,max,min,mean,math.sqrt(variance)/1000000,len(uniqueUsers))
+def Analyze(data,index,filter=None):
+	list=[]
+	if filter is None:
+		keys=data.keys()
+	else:
+		keys= [ x for x in data.keys() if x in filter ]
+	for key in keys:
+		list.append(calculateStats(key,data[key]))
+        return sorted(list, key=lambda s: s[index], reverse=True)
+def Display(data,field,limit=None,sortField=1,filter=None,showRequests=False):
+	""" Displays stats based on data passed in data
+	Input:
+		data => dictionary structured as per output of processRequests
+		field => field to be processed from the apache log request
+		limit => maxNumber of data points to display. (default no limit)
+		sortField => Which field in the data point to sort by. Default is 1 which is count. 
+			# to field mapping is (0: field name, 1: Count, 2: max rtime, 3: min rtime, 4: mean rtime, 5: std dev of rtime, 6: Count of unique users)
+		filter => A python list containing what values to filter. These values are the request values.
+		showRequests => This is a boolean which controls whether or not unique requests are shown for each value with a count of the number of occurrances of each.
+	Output:
+		No return values.
+		Screen output:
+			A line displaying the fields listed in sortField.
+	"""
+	if limit is not None:
+		print 'Top %s hits' % (limit)
+	for item in Analyze(data[field],sortField,filter)[0:limit]:
+		print item[0],"has",item[1],"hits."," Mean: ",item[4]," Std Dev: ",item[5]," Max: ",item[2]," Min: ",item[3]," Unique Users",item[6]
+		if showRequests:
+			requestCount = {}
+			for x in data[field][item[0]]:
+				requestCount[x["request"]]=requestCount.get(x["request"],0) + 1
+			for entry in sorted(requestCount, key=requestCount.get, reverse=True):
+				print "\t%s Count: %d" % (entry,requestCount[entry])
+			
+
+##### Main Body Starts Here ########
+data = processRequests(loadLog(str(sys.argv[1])),IPFilter)
+print "Requests by HTTP status Code"
+print "###################################"
+Display(data,"status",sortField=0)
+print
+print "Hits per request"
+print "###################################"
+Display(data,"request",limit=5)
+print
+print "Hits by response time"
+print "###################################"
+Display(data,"request",limit=10,sortField=4)
+print
+print "Hits by browser"
+print "###################################"
+Display(data,"UAgent")
+print
+print "List of HTTP error codes"
+print "###################################"
+Display(data,"status",filter=["504","500","404","401","400"],showRequests=True)

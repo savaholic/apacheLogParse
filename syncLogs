@@ -1,0 +1,12 @@
+#! /bin/bash
+site=klas1
+date=`date +"%Y%m%d"`
+logDir="/prod/www/logs/ob/"
+log="${logDir}accessJSON.log-${date}.gz"
+combLog="accessJSON"
+
+scp vbs-purchase-fe-vm-01.${site}.s.vonagenetworks.net:${log} ./${combLog}01-${date}.gz
+scp vbs-purchase-fe-vm-02.${site}.s.vonagenetworks.net:${log} ./${combLog}02-${date}.gz
+gunzip ./${combLog}01-${date}.gz
+gunzip ./${combLog}02-${date}.gz
+cat ${combLog}01-${date} ${combLog}02-${date} > ${combLog}-${date} && rm ${combLog}01-${date} ${combLog}02-${date}

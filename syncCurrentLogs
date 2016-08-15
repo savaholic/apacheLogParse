@@ -1,0 +1,10 @@
+#! /bin/bash
+site=klas1
+date="YYYYMMDD"
+logDir="/prod/www/logs/ob/"
+log="${logDir}accessJSON.log"
+combLog="accessJSON"
+
+scp vbs-purchase-fe-vm-01.${site}.s.vonagenetworks.net:${log} ./${combLog}01-${date}
+scp vbs-purchase-fe-vm-02.${site}.s.vonagenetworks.net:${log} ./${combLog}02-${date}
+cat ${combLog}01-${date} ${combLog}02-${date} > ${combLog}-${date} && rm ${combLog}01-${date} ${combLog}02-${date}
